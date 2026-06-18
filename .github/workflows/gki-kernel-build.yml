@@ -91,33 +91,32 @@ jobs:
 
       - name: Write security config
         run: |
-          cat >> $OUT_DIR/.config << 'CONFIGEOF'
-CONFIG_KSU=y
-CONFIG_KSU_SUSFS=y
-CONFIG_HAVE_UID_ASSIGN_CHANGE=y
-# CONFIG_MODULE_SIG is not set
-# CONFIG_MODULE_SIG_FORCE is not set
-# CONFIG_MODULE_SIG_ALL is not set
-CONFIG_SYSTEM_TRUSTED_KEYS=""
-CONFIG_SYSTEM_REVOCATION_KEYS=""
-# CONFIG_KEXEC_VERIFY_SIG is not set
-# CONFIG_KEXEC_BZIMAGE_VERIFY_SIG is not set
-# CONFIG_IMA is not set
-# CONFIG_EVM is not set
-# CONFIG_DM_VERITY is not set
-# CONFIG_DM_INTEGRITY is not set
-# CONFIG_LOCK_DOWN_KERNEL is not set
-# CONFIG_SECURE_BOOT is not set
-# CONFIG_EFI_SECURE_BOOT is not set
-# CONFIG_CRYPTO_FIPS is not set
-# CONFIG_INTEGRITY_SIGNATURE is not set
-CONFIG_DEBUG_KERNEL=y
-CONFIG_DEBUG_INFO=y
-CONFIG_FRAME_POINTER=y
-CONFIG_KPROBES=y
-CONFIG_KPROBES_ON_FTRACE=y
-CONFIG_SECURITY_SELINUX=y
-CONFIGEOF
+          # Append security and KernelSU-related options to .config using echo to avoid heredoc issues
+          echo "CONFIG_KSU=y" >> $OUT_DIR/.config
+          echo "CONFIG_KSU_SUSFS=y" >> $OUT_DIR/.config
+          echo "CONFIG_HAVE_UID_ASSIGN_CHANGE=y" >> $OUT_DIR/.config
+          echo "# CONFIG_MODULE_SIG is not set" >> $OUT_DIR/.config
+          echo "# CONFIG_MODULE_SIG_FORCE is not set" >> $OUT_DIR/.config
+          echo "# CONFIG_MODULE_SIG_ALL is not set" >> $OUT_DIR/.config
+          echo "CONFIG_SYSTEM_TRUSTED_KEYS=\"\"" >> $OUT_DIR/.config
+          echo "CONFIG_SYSTEM_REVOCATION_KEYS=\"\"" >> $OUT_DIR/.config
+          echo "# CONFIG_KEXEC_VERIFY_SIG is not set" >> $OUT_DIR/.config
+          echo "# CONFIG_KEXEC_BZIMAGE_VERIFY_SIG is not set" >> $OUT_DIR/.config
+          echo "# CONFIG_IMA is not set" >> $OUT_DIR/.config
+          echo "# CONFIG_EVM is not set" >> $OUT_DIR/.config
+          echo "# CONFIG_DM_VERITY is not set" >> $OUT_DIR/.config
+          echo "# CONFIG_DM_INTEGRITY is not set" >> $OUT_DIR/.config
+          echo "# CONFIG_LOCK_DOWN_KERNEL is not set" >> $OUT_DIR/.config
+          echo "# CONFIG_SECURE_BOOT is not set" >> $OUT_DIR/.config
+          echo "# CONFIG_EFI_SECURE_BOOT is not set" >> $OUT_DIR/.config
+          echo "# CONFIG_CRYPTO_FIPS is not set" >> $OUT_DIR/.config
+          echo "# CONFIG_INTEGRITY_SIGNATURE is not set" >> $OUT_DIR/.config
+          echo "CONFIG_DEBUG_KERNEL=y" >> $OUT_DIR/.config
+          echo "CONFIG_DEBUG_INFO=y" >> $OUT_DIR/.config
+          echo "CONFIG_FRAME_POINTER=y" >> $OUT_DIR/.config
+          echo "CONFIG_KPROBES=y" >> $OUT_DIR/.config
+          echo "CONFIG_KPROBES_ON_FTRACE=y" >> $OUT_DIR/.config
+          echo "CONFIG_SECURITY_SELINUX=y" >> $OUT_DIR/.config
           
           cp $OUT_DIR/.config $OUT_DIR/.config.backup
 
@@ -211,7 +210,7 @@ INFOEOF
         uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: kernel-kernelsu-${{ env.KERNELSU_VERSION }}
+          name: kernel-kernelsu
           path: artifacts/
           retention-days: 30
           compression-level: 9
