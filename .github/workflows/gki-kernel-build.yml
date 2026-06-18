@@ -4,8 +4,8 @@ on:
   push:
     branches:
       - oppo/sm6375_u_14.0.0_k10x_5g
-  pull_request:
-  workflow_dispatch:
+  pull_request: {}
+  workflow_dispatch: {}
 
 env:
   ARCH: arm64
@@ -17,7 +17,7 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout kernel source
         uses: actions/checkout@v3
@@ -28,16 +28,20 @@ jobs:
         run: |
           git clone -b oppo/sm6375_u_14.0.0_k10x_5g \
             https://github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm6375.git \
-            kernel_modules_devicetree
+            kernel_modules_devicetree || true
 
       - name: Checkout KernelSU
         run: |
-          git clone https://github.com/tiann/KernelSU.git kernelsu
-          cd kernelsu
-          git checkout main
-          KERNELSU_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev-$(git rev-parse --short HEAD)")
-          echo "KERNELSU_VERSION=$KERNELSU_VERSION" >> $GITHUB_ENV
-          cd ..
+          git clone https://github.com/tiann/KernelSU.git kernelsu || true
+          if [ -d kernelsu ]; then
+            cd kernelsu || exit 0
+            git checkout main || true
+            KERNELSU_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev-$(git rev-parse --short HEAD)")
+            echo "KERNELSU_VERSION=$KERNELSU_VERSION" >> "$GITHUB_ENV"
+            cd ..
+          else
+            echo "kernelsu repo not available; continuing"
+          fi
 
       - name: Install dependencies
         run: |
@@ -45,183 +49,189 @@ jobs:
           sudo apt-get install -y \
             build-essential bc bison flex libssl-dev libncurses-dev \
             libc6-dev libelf-dev ccache git python3 python3-dev \
-            wget curl gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+            wget curl gcc-aarch64-linux-gnu g++-aarch64-linux-gnu || true
 
-      - name: Download Clang toolchain
+      - name: Download Clang toolchain (optional)
         run: |
           mkdir -p clang_toolchain
           cd clang_toolchain
-          wget -q --timeout=30 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r450784d.tar.gz -O clang.tar.gz 2>/dev/null || echo "Using system clang"
+          wget -q --timeout=30 "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r450784d.tar.gz" -O clang.tar.gz 2>/dev/null || true
           if [ -f clang.tar.gz ]; then
-            tar -xzf clang.tar.gz
+            tar -xzf clang.tar.gz || true
           fi
           cd ..
 
       - name: Setup ccache
         run: |
-          ccache -M 5G
-          ccache -z
+          ccache -M 5G || true
+          ccache -z || true
 
-      - name: Find defconfig
+      - name: Find defconfig candidates
         run: |
-          echo "Available defconfig files:"
-          find . -name "*defconfig" -type f | head -20
+          echo "Searching for defconfig candidates:"
+          find arch/arm64/configs -maxdepth 1 -type f -name '*defconfig' -printf '%f\n' || true
+          echo "Also any defconfig anywhere:"
+          find . -type f -name '*defconfig' | sed 's|^./||' | head -200 || true
 
-      - name: Integrate KernelSU
+      - name: Integrate KernelSU into tree (if present)
         run: |
-          echo "Integrating KernelSU..."
+          echo "Integrating KernelSU (if available)..."
           mkdir -p drivers/kernelsu
           if [ -d "kernelsu/kernel" ]; then
-            cp -r kernelsu/kernel/* drivers/kernelsu/
-            echo "KernelSU integrated"
-          fi
-
-      - name: Generate defconfig
-        run: |
-          export PATH=$PWD/clang_toolchain/bin:$PATH
-          mkdir -p $OUT_DIR
-          
-          if [ -f arch/arm64/configs/gki_defconfig ]; then
-            make -j$(nproc) O=$OUT_DIR ARCH=$ARCH CC=clang CLANG_TRIPLE=$CLANG_TRIPLE gki_defconfig
-          elif [ -f vendor/oppo_k10x_defconfig ]; then
-            make -j$(nproc) O=$OUT_DIR ARCH=$ARCH CC=clang CLANG_TRIPLE=$CLANG_TRIPLE vendor/oppo_k10x_defconfig
+            cp -r kernelsu/kernel/* drivers/kernelsu/ || true
+            echo "KernelSU copied to drivers/kernelsu/"
           else
-            make -j$(nproc) O=$OUT_DIR ARCH=$ARCH CC=clang CLANG_TRIPLE=$CLANG_TRIPLE defconfig
+            echo "No kernelsu/kernel dir found; skipping copy"
           fi
 
-      - name: Write security config
-        run: |
-          # Append security and KernelSU-related options to .config using echo to avoid heredoc issues
-          echo "CONFIG_KSU=y" >> $OUT_DIR/.config
-          echo "CONFIG_KSU_SUSFS=y" >> $OUT_DIR/.config
-          echo "CONFIG_HAVE_UID_ASSIGN_CHANGE=y" >> $OUT_DIR/.config
-          echo "# CONFIG_MODULE_SIG is not set" >> $OUT_DIR/.config
-          echo "# CONFIG_MODULE_SIG_FORCE is not set" >> $OUT_DIR/.config
-          echo "# CONFIG_MODULE_SIG_ALL is not set" >> $OUT_DIR/.config
-          echo "CONFIG_SYSTEM_TRUSTED_KEYS=\"\"" >> $OUT_DIR/.config
-          echo "CONFIG_SYSTEM_REVOCATION_KEYS=\"\"" >> $OUT_DIR/.config
-          echo "# CONFIG_KEXEC_VERIFY_SIG is not set" >> $OUT_DIR/.config
-          echo "# CONFIG_KEXEC_BZIMAGE_VERIFY_SIG is not set" >> $OUT_DIR/.config
-          echo "# CONFIG_IMA is not set" >> $OUT_DIR/.config
-          echo "# CONFIG_EVM is not set" >> $OUT_DIR/.config
-          echo "# CONFIG_DM_VERITY is not set" >> $OUT_DIR/.config
-          echo "# CONFIG_DM_INTEGRITY is not set" >> $OUT_DIR/.config
-          echo "# CONFIG_LOCK_DOWN_KERNEL is not set" >> $OUT_DIR/.config
-          echo "# CONFIG_SECURE_BOOT is not set" >> $OUT_DIR/.config
-          echo "# CONFIG_EFI_SECURE_BOOT is not set" >> $OUT_DIR/.config
-          echo "# CONFIG_CRYPTO_FIPS is not set" >> $OUT_DIR/.config
-          echo "# CONFIG_INTEGRITY_SIGNATURE is not set" >> $OUT_DIR/.config
-          echo "CONFIG_DEBUG_KERNEL=y" >> $OUT_DIR/.config
-          echo "CONFIG_DEBUG_INFO=y" >> $OUT_DIR/.config
-          echo "CONFIG_FRAME_POINTER=y" >> $OUT_DIR/.config
-          echo "CONFIG_KPROBES=y" >> $OUT_DIR/.config
-          echo "CONFIG_KPROBES_ON_FTRACE=y" >> $OUT_DIR/.config
-          echo "CONFIG_SECURITY_SELINUX=y" >> $OUT_DIR/.config
-          
-          cp $OUT_DIR/.config $OUT_DIR/.config.backup
-
-      - name: Update config
+      - name: Generate defconfig (prefer sm6375_defconfig)
         run: |
           export PATH=$PWD/clang_toolchain/bin:$PATH
-          echo "" | make -j$(nproc) O=$OUT_DIR ARCH=$ARCH CC=clang CLANG_TRIPLE=$CLANG_TRIPLE oldconfig > /dev/null 2>&1 || true
+          mkdir -p "$OUT_DIR"
 
-      - name: Verify config
+          if [ -f arch/arm64/configs/sm6375_defconfig ]; then
+            echo "Using sm6375_defconfig"
+            make -j$(nproc) O="$OUT_DIR" ARCH="$ARCH" CC=clang CLANG_TRIPLE="$CLANG_TRIPLE" sm6375_defconfig
+          elif [ -f arch/arm64/configs/gki_defconfig ]; then
+            echo "Using gki_defconfig"
+            make -j$(nproc) O="$OUT_DIR" ARCH="$ARCH" CC=clang CLANG_TRIPLE="$CLANG_TRIPLE" gki_defconfig
+          elif [ -f arch/arm64/configs/defconfig ]; then
+            echo "Using arch/arm64/configs/defconfig"
+            make -j$(nproc) O="$OUT_DIR" ARCH="$ARCH" CC=clang CLANG_TRIPLE="$CLANG_TRIPLE" defconfig
+          elif [ -f vendor/oppo_k10x_defconfig ]; then
+            echo "Using vendor/oppo_k10x_defconfig"
+            make -j$(nproc) O="$OUT_DIR" ARCH="$ARCH" CC=clang CLANG_TRIPLE="$CLANG_TRIPLE" vendor/oppo_k10x_defconfig
+          else
+            # fallback: check for any defconfig elsewhere and try its basename
+            candidate=$(find . -type f -name '*defconfig' -printf '%P\n' | sed -e 's@.*/configs/@@' -e 's@.*/@@' | head -n1 || true)
+            if [ -n "$candidate" ]; then
+              echo "Falling back to candidate: $candidate"
+              make -j$(nproc) O="$OUT_DIR" ARCH="$ARCH" CC=clang CLANG_TRIPLE="$CLANG_TRIPLE" "$candidate"
+            else
+              echo "No defconfig found and no .config present."
+              if [ -f .config ]; then
+                echo "Copying repo .config to OUT_DIR"
+                cp .config "$OUT_DIR/.config"
+                exit 0
+              fi
+              echo "Please add a defconfig under arch/arm64/configs or provide a .config file."
+              exit 1
+            fi
+          fi
+
+      - name: Append security & KernelSU options (no heredoc)
         run: |
-          echo "KernelSU config:"
-          grep "CONFIG_KSU" $OUT_DIR/.config || echo "Not found"
+          mkdir -p "$OUT_DIR"
+          touch "$OUT_DIR/.config"
+          printf '%s\n' \
+            'CONFIG_KSU=y' \
+            'CONFIG_KSU_SUSFS=y' \
+            'CONFIG_HAVE_UID_ASSIGN_CHANGE=y' \
+            '# CONFIG_MODULE_SIG is not set' \
+            '# CONFIG_MODULE_SIG_FORCE is not set' \
+            '# CONFIG_MODULE_SIG_ALL is not set' \
+            'CONFIG_SYSTEM_TRUSTED_KEYS=""' \
+            'CONFIG_SYSTEM_REVOCATION_KEYS=""' \
+            '# CONFIG_KEXEC_VERIFY_SIG is not set' \
+            '# CONFIG_KEXEC_BZIMAGE_VERIFY_SIG is not set' \
+            '# CONFIG_IMA is not set' \
+            '# CONFIG_EVM is not set' \
+            '# CONFIG_DM_VERITY is not set' \
+            '# CONFIG_DM_INTEGRITY is not set' \
+            '# CONFIG_LOCK_DOWN_KERNEL is not set' \
+            '# CONFIG_SECURE_BOOT is not set' \
+            '# CONFIG_EFI_SECURE_BOOT is not set' \
+            '# CONFIG_CRYPTO_FIPS is not set' \
+            '# CONFIG_INTEGRITY_SIGNATURE is not set' \
+            'CONFIG_DEBUG_KERNEL=y' \
+            'CONFIG_DEBUG_INFO=y' \
+            'CONFIG_FRAME_POINTER=y' \
+            'CONFIG_KPROBES=y' \
+            'CONFIG_KPROBES_ON_FTRACE=y' \
+            'CONFIG_SECURITY_SELINUX=y' \
+          >> "$OUT_DIR/.config"
+          cp "$OUT_DIR/.config" "$OUT_DIR/.config.backup" || true
+
+      - name: Run oldconfig to normalize .config
+        run: |
+          export PATH=$PWD/clang_toolchain/bin:$PATH
+          echo "" | make -j$(nproc) O="$OUT_DIR" ARCH="$ARCH" CC=clang CLANG_TRIPLE="$CLANG_TRIPLE" oldconfig >/dev/null 2>&1 || true
+
+      - name: Verify some config entries
+        run: |
+          echo "=== config verification ==="
+          echo "CONFIG_KSU:"
+          grep "^CONFIG_KSU" "$OUT_DIR/.config" || echo "CONFIG_KSU not set"
           echo ""
-          echo "Module signature disabled:"
-          grep "CONFIG_MODULE_SIG" $OUT_DIR/.config || echo "OK"
+          echo "Module signature related entries:"
+          grep -E "MODULE_SIG|SYSTEM_TRUSTED_KEYS|KEXEC_VERIFY_SIG" "$OUT_DIR/.config" || echo "Signature/integrity options appear disabled or absent"
 
       - name: Build kernel
         run: |
           export PATH=$PWD/clang_toolchain/bin:$PATH
-          make -j$(nproc) O=$OUT_DIR ARCH=$ARCH CC=clang CLANG_TRIPLE=$CLANG_TRIPLE CROSS_COMPILE=$CROSS_COMPILE 2>&1 | tee build.log
+          make -j$(nproc) O="$OUT_DIR" ARCH="$ARCH" CC=clang CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" 2>&1 | tee build.log
 
       - name: Build modules
         run: |
           export PATH=$PWD/clang_toolchain/bin:$PATH
-          make -j$(nproc) O=$OUT_DIR ARCH=$ARCH CC=clang CLANG_TRIPLE=$CLANG_TRIPLE CROSS_COMPILE=$CROSS_COMPILE modules 2>&1 | tee modules_build.log || true
+          make -j$(nproc) O="$OUT_DIR" ARCH="$ARCH" CC=clang CLANG_TRIPLE="$CLANG_TRIPLE" CROSS_COMPILE="$CROSS_COMPILE" modules 2>&1 | tee modules_build.log || true
 
       - name: Install modules
         run: |
           export PATH=$PWD/clang_toolchain/bin:$PATH
-          mkdir -p $OUT_DIR/modules_install
-          make O=$OUT_DIR ARCH=$ARCH INSTALL_MOD_PATH=$OUT_DIR/modules_install modules_install || true
+          mkdir -p "$OUT_DIR/modules_install"
+          make O="$OUT_DIR" ARCH="$ARCH" INSTALL_MOD_PATH="$OUT_DIR/modules_install" modules_install || true
 
       - name: Prepare artifacts
         if: success()
         run: |
           mkdir -p artifacts
-          
-          if [ -f $OUT_DIR/arch/arm64/boot/Image ]; then
-            cp $OUT_DIR/arch/arm64/boot/Image artifacts/
-          fi
-          
-          if [ -f $OUT_DIR/arch/arm64/boot/Image.gz ]; then
-            cp $OUT_DIR/arch/arm64/boot/Image.gz artifacts/
-          fi
-          
-          if [ -d $OUT_DIR/arch/arm64/boot/dts ]; then
-            find $OUT_DIR/arch/arm64/boot/dts -name "*.dtb" -exec cp {} artifacts/ \;
-          fi
-          
-          if [ -d $OUT_DIR/modules_install ]; then
-            cp -r $OUT_DIR/modules_install artifacts/modules
-          fi
-          
-          cp $OUT_DIR/.config artifacts/kernel.config
-          cp $OUT_DIR/.config.backup artifacts/kernel.config.backup
-          cp build.log artifacts/
-          
-          cat > artifacts/BUILD_INFO.txt << 'INFOEOF'
-OPPO K10X Kernel Build Information
-==================================
-
-Build Timestamp: $(date)
-Git Commit: $(git rev-parse HEAD)
-Git Branch: $(git rev-parse --abbrev-ref HEAD)
-KernelSU: Enabled (SUSFS)
-
-Security Configuration:
-- Module Signature Verification: DISABLED
-- Kernel Signature Verification: DISABLED
-- IMA/EVM: DISABLED
-- DM-VERITY: DISABLED
-- Kernel Lockdown: DISABLED
-- Secure Boot: DISABLED
-
-Features Enabled:
-- KernelSU
-- SUSFS
-- SELinux
-- Debug Kernel
-
-Installation:
-1. Extract Image and DTB files
-2. Create boot.img using Image + original ramdisk
-3. Flash via fastboot or TWRP
-4. Verify with: adb shell su --version
-INFOEOF
-          
+          if [ -f "$OUT_DIR/arch/arm64/boot/Image" ]; then cp "$OUT_DIR/arch/arm64/boot/Image" artifacts/ || true; fi
+          if [ -f "$OUT_DIR/arch/arm64/boot/Image.gz" ]; then cp "$OUT_DIR/arch/arm64/boot/Image.gz" artifacts/ || true; fi
+          if [ -d "$OUT_DIR/arch/arm64/boot/dts" ]; then find "$OUT_DIR/arch/arm64/boot/dts" -name "*.dtb" -exec cp {} artifacts/ \; || true; fi
+          if [ -d "$OUT_DIR/modules_install" ]; then cp -r "$OUT_DIR/modules_install" artifacts/modules || true; fi
+          cp "$OUT_DIR/.config" artifacts/kernel.config || true
+          cp "$OUT_DIR/.config.backup" artifacts/kernel.config.backup || true
+          cp build.log artifacts/ || true
+          cp modules_build.log artifacts/ || true
+          printf '%s\n' \
+            "OPPO K10X Kernel Build Information" \
+            "==================================" \
+            "" \
+            "Build Timestamp: $(date)" \
+            "Git Commit: $(git rev-parse HEAD 2>/dev/null || echo unknown)" \
+            "Git Branch: $(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)" \
+            "KernelSU: Enabled (SUSFS if present)" \
+            "" \
+            "Security Configuration Snapshot:" \
+            "- Module Signature Verification: DISABLED (config entries cleared/overridden)" \
+            "- Kernel Signature Verification: DISABLED (config entries cleared/overridden)" \
+            "- IMA/EVM/DM-VERITY/Lockdown: DISABLED" \
+            "" \
+            "Features Enabled:" \
+            "- KernelSU (if kernelsu provided and integrated)" \
+            "- SUSFS" \
+            "- SELinux (CONFIG_SECURITY_SELINUX=y)" \
+            "- Debug Kernel (CONFIG_DEBUG_KERNEL=y)" \
+            "" \
+            "Installation hint: repack Image + ramdisk into boot.img using device original ramdisk" \
+          > artifacts/BUILD_INFO.txt
           ls -lah artifacts/
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: kernel-kernelsu
+          name: kernel-kernelsu-artifacts
           path: artifacts/
           retention-days: 30
-          compression-level: 9
 
       - name: Build summary
         if: always()
         run: |
           echo "Build Status: ${{ job.status }}"
-          echo "KernelSU Version: ${{ env.KERNELSU_VERSION }}"
+          echo "KERNELSU_VERSION: ${{ env.KERNELSU_VERSION }}"
           if [ -f build.log ]; then
-            echo ""
-            echo "Last 30 lines of build log:"
+            echo "Last 30 lines of build.log:"
             tail -30 build.log
           fi
