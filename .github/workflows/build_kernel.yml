@@ -18,11 +18,12 @@ jobs:
       - name: Configure Fast APT Mirror
         uses: vegardit/fast-apt-mirror.sh@v1
         
-      - name: Make Build Environment
+      - name: Install Build Dependencies
         timeout-minutes: 10
         run: |
           sudo apt-get update
-          sudo apt-get install -y git wget automake flex lzop bison gperf build-essential zip curl zlib1g-dev libxml2-utils bzip2 libbz2-dev libbz2-1.0 libghc-bzlib-dev squashfs-tools pngcrush schedtool dpkg-dev liblz4-tool make optipng maven libssl-dev pwgen libswitch-perl policycoreutils minicom libxml-sax-base-perl libxml-simple-perl bc libc6-dev-i386 libx11-dev lib32z-dev libgl1-mesa-dev xsltproc unzip device-tree-compiler python3 ccache git-lfs gnupg imagemagick libelf-dev libncurses5-dev libsdl1.2-dev gpart fuse2fs e2fsck-static icu-doc rsync adb fastboot libstdc++6 python-is-python3 gcc-aarch64-linux-gnu
+          sudo apt-get install -y git wget automake flex lzop bison gperf build-essential zip curl zlib1g-dev libxml2-utils bzip2 libbz2-dev squashfs-tools pngcrush schedtool dpkg-dev liblz4-tool make optipng libssl-dev pwgen libswitch-perl bc libc6-dev-i386 lib32z-dev xsltproc unzip device-tree-compiler python3 ccache git-lfs gnupg libelf-dev libncurses5-dev rsync adb fastboot python-is-python3
+
           mkdir -p $CCACHE_DIR
           mkdir -p ${{ env.OPPO_K10X_RootPath }}
           mkdir -p ${{ env.OPPO_K10X_RootPath }}/kernel
@@ -37,7 +38,7 @@ jobs:
           fetch-depth: 1
           submodules: false
 
-      - name: Checkout Modules Source
+      - name: Checkout Modules & Devicetree Source
         uses: actions/checkout@v6
         with:
           repository: Rancemxn/android_kernel_modules_and_devicetree_oppo_sm6375
@@ -45,7 +46,7 @@ jobs:
           ref: oppo/sm6375_u_14.0.0_k10x_5g
           fetch-depth: 1
 
-      - name: Checkout Submodules
+      - name: Checkout Kernel Submodules
         working-directory: ${{ env.KERNEL_DIR }}
         run: |
           git submodule init
@@ -55,12 +56,12 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ${{ runner.os }}-ccache-${{ github.ref_name }}-${{ github.run_id }}
+          key: ${{ runner.os }}-ccache-${{ github.ref_name }}
           restore-keys: |
             ${{ runner.os }}-ccache-${{ github.ref_name }}-
             ${{ runner.os }}-ccache-
 
-      - name: Prepare Compiler
+      - name: Prepare Clang & GCC Toolchain
         run: |
           mkdir -p ${{ env.OPPO_K10X_RootPath }}/compiler
           cd ${{ env.OPPO_K10X_RootPath }}/compiler
@@ -82,7 +83,7 @@ jobs:
           ln -sf "$(which ccache)" arm-linux-androideabi-gcc
           ln -sf "$(which ccache)" arm-linux-androideabi-g++
 
-      - name: Handle Dependencies
+      - name: Link WLAN Driver Source
         working-directory: ${{ env.OPPO_K10X_RootPath }}
         run: |
           mv temp_modules/vendor ./vendor
@@ -101,35 +102,18 @@ jobs:
         with:
           swap-size-gb: 12
 
-      # =====================核心修改：defconfig m → y=====================
-      - name: Modify k10x_defconfig - WLAN 驱动改为内置
-        working-directory: ${{ env.KERNEL_DIR }}
-        run: |
-          DEFCONFIG=k10x_defconfig
-          sed -i 's/^CONFIG_QCA_CLD_WLAN=m/CONFIG_QCA_CLD_WLAN=y/' arch/arm64/configs/${DEFCONFIG}
-          sed -i '/# CONFIG_QCA_CLD_WLAN is not set/d' arch/arm64/configs/${DEFCONFIG}
-          echo "===== 修改后配置 ====="
-          grep CONFIG_QCA_CLD_WLAN arch/arm64/configs/${DEFCONFIG}
-
-      - name: Compile Kernel
+      - name: Compile Kernel (WLAN改为内置)
         working-directory: ${{ env.KERNEL_DIR }}
         run: |
           chmod +x build.sh
           ./build.sh
       
-      - name: Show Ccache Stats
+      - name: Show Ccache Statistics
         if: always()
         run: ccache -s
 
-      - name: Upload Kernel Image
+      - name: Upload Compiled Kernel Image
         uses: actions/upload-artifact@v6
         with:
-          name: OPPO_K10x_Kernel_Image
+          name: OPPO_K10x-Kernel-Image
           path: ${{ env.KERNEL_DIR }}/out/arch/arm64/boot/Image
-
-      # !重要：内置编译不会生成ko，注释模块打包上传
-      # - name: Upload Kernel Modules
-      #   uses: actions/upload-artifact@v6
-      #   with:
-      #     name: OPPO_K10x_Kernel_Modules
-      #     path: ${{ env.KERNEL_DIR }}/out/all_modules/*
