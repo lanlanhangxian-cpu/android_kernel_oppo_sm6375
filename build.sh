@@ -18,22 +18,19 @@ export CROSS_COMPILE_ARM32="arm-linux-androideabi-"
 export CLANG_TRIPLE="aarch64-linux-gnu-"
 export CLANG_PATH=$OPPO_K10X_RootPath/compiler/clang-12.0.5/bin
 
-# =========重要改动：移除LLVM=1，使用混合编译模式==========
-# clang负责C语言编译，交叉gcc工具链内的as汇编器处理汇编文件，彻底避开系统/usr/bin/as
+# 重点：不再使用 CC=clang，切换GCC整套编译，汇编器自动使用 aarch64-linux-android-as
+make O=out CROSS_COMPILE=${CROSS_COMPILE} k10x_defconfig
 
-# 生成defconfig
-make O=out CC=clang CROSS_COMPILE=${CROSS_COMPILE} k10x_defconfig
-
-# WIFI驱动 m → y（内置）
+# WIFI驱动模块改内置
 sed -i 's/^CONFIG_QCA_CLD_WLAN=m/CONFIG_QCA_CLD_WLAN=y/' out/.config
 echo "===== WLAN配置检查 ====="
 grep CONFIG_QCA_CLD_WLAN out/.config
 echo "========================"
 
-# 正式编译：不要加 LLVM=1
-make O=out CC=clang CROSS_COMPILE=${CROSS_COMPILE} -j$(nproc)
+# GCC编译，移除clang参数
+make O=out CROSS_COMPILE=${CROSS_COMPILE} -j$(nproc)
 
-# 模块收集逻辑
+# 模块打包逻辑
 ALL_MODULES_DIR="$OPPO_K10X_RootPath/kernel/msm-5.4/out/all_modules"
 KERNEL_RELEASE=$(cat out/include/config/kernel.release)
 FAKE_ROOT="$OPPO_K10X_RootPath/kernel/msm-5.4/out/fake_root"
