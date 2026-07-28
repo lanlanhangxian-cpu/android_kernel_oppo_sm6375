@@ -18,17 +18,29 @@ export CROSS_COMPILE_ARM32="arm-linux-androideabi-"
 export CLANG_TRIPLE="aarch64-linux-gnu-"
 export CLANG_PATH=$OPPO_K10X_RootPath/compiler/clang-12.0.5/bin
 
+# 修复汇编 -EL 参数报错：强制整套LLVM工具链，防止调用系统/usr/bin/as
+export LLVM=1
+export AS=llvm-as
+export LD=ld.lld
+export AR=llvm-ar
+export NM=llvm-nm
+export OBJCOPY=llvm-objcopy
+export OBJDUMP=llvm-objdump
+export STRIP=llvm-strip
+
+# 生成基础defconfig
 make O=out CC="clang" LLVM=1 k10x_defconfig
 
-# ==========新增代码：WIFI驱动修改为内置==========
+# WIFI驱动改为内置 CONFIG_QCA_CLD_WLAN=m → y
 sed -i 's/^CONFIG_QCA_CLD_WLAN=m/CONFIG_QCA_CLD_WLAN=y/' out/.config
-# 打印配置确认修改成功
-echo "【当前WIFI驱动配置】"
+echo "===== WLAN配置检查 ====="
 grep CONFIG_QCA_CLD_WLAN out/.config
-# ===============================================
+echo "========================"
 
+# 正式编译内核
 make O=out CC="clang" LLVM=1 -j$(nproc)
 
+# 模块收集逻辑（内置成功后不会生成wlan.ko，代码保留不影响编译流程）
 ALL_MODULES_DIR="$OPPO_K10X_RootPath/kernel/msm-5.4/out/all_modules"
 KERNEL_RELEASE=$(cat out/include/config/kernel.release)
 FAKE_ROOT="$OPPO_K10X_RootPath/kernel/msm-5.4/out/fake_root"
