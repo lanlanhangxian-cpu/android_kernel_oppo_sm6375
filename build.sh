@@ -19,6 +19,14 @@ export CLANG_TRIPLE="aarch64-linux-gnu-"
 export CLANG_PATH=$OPPO_K10X_RootPath/compiler/clang-12.0.5/bin
 
 make O=out CC="clang" LLVM=1 k10x_defconfig
+
+# ==========新增代码：WIFI驱动修改为内置==========
+sed -i 's/^CONFIG_QCA_CLD_WLAN=m/CONFIG_QCA_CLD_WLAN=y/' out/.config
+# 打印配置确认修改成功
+echo "【当前WIFI驱动配置】"
+grep CONFIG_QCA_CLD_WLAN out/.config
+# ===============================================
+
 make O=out CC="clang" LLVM=1 -j$(nproc)
 
 ALL_MODULES_DIR="$OPPO_K10X_RootPath/kernel/msm-5.4/out/all_modules"
