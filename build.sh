@@ -1,15 +1,12 @@
 #!/bin/bash
-设置 
 
- [ -z "$OPPO_K10X_RootPath" ]; 然后
-    CONF_FILE="$(dirname "$(readlink -f "$0")")/env_vars.sh"
-    如果 [ -f "$CONF_FILE" ]; 那么
-源"$CONF_FILE"
-    fi
+CONF_FILE="$(dirname "$(readlink -f "$0")")/env_vars.sh"
+if [ -f "$CONF_FILE" ]; then
+    source "$CONF_FILE"
 fi
 
-如果 [ "$OPPO_K10X_RootPath" ]; 那么
-echo"OPPO_K10X_RootPath 未定义。"
+if [ -z "$OPPO_K10X_RootPath" ]; then
+    echo "OPPO_K10X_RootPath 未定义。"
     exit 1
 fi
 
@@ -30,12 +27,15 @@ FAKE_ROOT="$OPPO_K10X_RootPath/kernel/msm-5.4/out/fake_root"
 FAKE_MOD_DIR="$FAKE_ROOT/lib/modules/$KERNEL_RELEASE"
 mkdir -p "$ALL_MODULES_DIR"
 mkdir -p "$FAKE_MOD_DIR"
-查找当前目录。-name "*.ko" -exec cp {} "$FAKE_MOD_DIR/" \;
-查找"$FAKE_MOD_DIR" -name "*.ko" -exec "$OPPO_K10X_RootPath/compiler/clang-12.0.5/bin/llvm-strip" --strip-debug {} \;
+
+find out -name "*.ko" -exec cp {} "$FAKE_MOD_DIR/" \;
+find "$FAKE_MOD_DIR" -name "*.ko" -exec "$OPPO_K10X_RootPath/compiler/clang-12.0.5/bin/llvm-strip" --strip-debug {} \;
+
 cd "$FAKE_MOD_DIR"
-mv wlan.ko qca_cld3_wlan.ko
+[ -f wlan.ko ] && mv wlan.ko qca_cld3_wlan.ko
 ls -1 *.ko > modules.load
 cd "$(dirname "$0")"
+
 depmod -b "$FAKE_ROOT" "$KERNEL_RELEASE"
 mv "$FAKE_MOD_DIR/"* "$ALL_MODULES_DIR/"
-rm -rf "$FAKE_ROOT".
+rm -rf "$FAKE_ROOT"
