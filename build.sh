@@ -12,22 +12,26 @@ fi
 
 export ARCH="arm64"
 export SUBARCH="arm64"
-export PATH="$OPPO_K10X_RootPath/compiler/ccache-bin:$OPPO_K10X_RootPath/compiler/clang-12.0.5/bin:$OPPO_K10X_RootPath/compiler/aarch64-linux-android-9.3/bin:$OPPO_K10X_RootPath/compiler/arm-linux-androideabi-4.9/bin:$PATH"
+export PATH="$OPPO_K10X_RootPath/compiler/aarch64-linux-android-9.3/bin:$OPPO_K10X_RootPath/compiler/arm-linux-androideabi-4.9/bin:$PATH"
 export CROSS_COMPILE="aarch64-linux-android-"
 export CROSS_COMPILE_ARM32="arm-linux-androideabi-"
-export CLANG_TRIPLE="aarch64-linux-gnu-"
-export CLANG_PATH=$OPPO_K10X_RootPath/compiler/clang-12.0.5/bin
 
-# 重点：不再使用 CC=clang，切换GCC整套编译，汇编器自动使用 aarch64-linux-android-as
+# 【关键】暂时从PATH移除clang目录，杜绝意外调用clang！
+unset CLANG_TRIPLE
+unset CLANG_PATH
+
+# 完整删除旧构建目录，清除全部clang残留编译缓存
+rm -rf out
+
+# GCC纯交叉编译，不涉及clang
 make O=out CROSS_COMPILE=${CROSS_COMPILE} k10x_defconfig
 
-# WIFI驱动模块改内置
+# WIFI尝试内置
 sed -i 's/^CONFIG_QCA_CLD_WLAN=m/CONFIG_QCA_CLD_WLAN=y/' out/.config
 echo "===== WLAN配置检查 ====="
 grep CONFIG_QCA_CLD_WLAN out/.config
 echo "========================"
 
-# GCC编译，移除clang参数
 make O=out CROSS_COMPILE=${CROSS_COMPILE} -j$(nproc)
 
 # 模块打包逻辑
@@ -39,7 +43,8 @@ mkdir -p "$ALL_MODULES_DIR"
 mkdir -p "$FAKE_MOD_DIR"
 
 find out -name "*.ko" -exec cp {} "$FAKE_MOD_DIR/" \;
-find "$FAKE_MOD_DIR" -name "*.ko" -exec "$OPPO_K10X_RootPath/compiler/clang-12.0.5/bin/llvm-strip" --strip-debug {} \;
+STRIP_BIN="${OPPO_K10X_RootPath}/compiler/aarch64-linux-android-9.3/bin/aarch64-linux-android-strip"
+find "$FAKE_MOD_DIR" -name "*.ko" -exec "${STRIP_BIN}" --strip-debug {} \;
 
 cd "$FAKE_MOD_DIR"
 [ -f wlan.ko ] && mv wlan.ko qca_cld3_wlan.ko
